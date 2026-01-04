@@ -1,10 +1,11 @@
 import axios from "axios";
 
 // =======================================
-// API BASE URL (ENV FIRST, FALLBACK LOCAL)
+// API BASE URL (Vercel → Render)
 // =======================================
 const BASE_URL =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/";
+  import.meta.env.VITE_API_URL ||
+  "https://apievent-1.onrender.com/api/";
 
 // =======================================
 // API INSTANCE
@@ -18,62 +19,48 @@ const API = axios.create({
 
 // =======================================
 // REQUEST INTERCEPTOR
-// Attach JWT Access Token
 // =======================================
 API.interceptors.request.use(
   (config) => {
     const accessToken = localStorage.getItem("access");
-
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
-
     return config;
   },
   (error) => Promise.reject(error)
 );
 
 // =======================================
-// RESPONSE INTERCEPTOR
-// Auto Refresh Token on 401
+// RESPONSE INTERCEPTOR (JWT Refresh)
 // =======================================
 API.interceptors.response.use(
   (response) => response,
-
   async (error) => {
     const originalRequest = error.config;
 
-    if (
-      error.response &&
-      error.response.status === 401 &&
-      !originalRequest._retry
-    ) {
+    if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
-      const refreshToken = localStorage.getItem("refresh");
-
-      if (!refreshToken) {
-        logoutUser();
+      const refresh = localStorage.getItem("refresh");
+      if (!refresh) {
+        logout();
         return Promise.reject(error);
       }
 
       try {
-        const response = await axios.post(
+        const res = await axios.post(
           `${BASE_URL}token/refresh/`,
-          { refresh: refreshToken }
+          { refresh }
         );
 
-        // Save new access token
-        localStorage.setItem("access", response.data.access);
-
-        // Retry original request
+        localStorage.setItem("access", res.data.access);
         originalRequest.headers.Authorization =
-          "Bearer " + response.data.access;
+          `Bearer ${res.data.access}`;
 
         return API(originalRequest);
-      } catch (refreshError) {
-        logoutUser();
-        return Promise.reject(refreshError);
+      } catch {
+        logout();
       }
     }
 
@@ -82,9 +69,9 @@ API.interceptors.response.use(
 );
 
 // =======================================
-// LOGOUT HELPER
+// LOGOUT
 // =======================================
-function logoutUser() {
+function logout() {
   localStorage.clear();
   window.location.href = "/";
 }
